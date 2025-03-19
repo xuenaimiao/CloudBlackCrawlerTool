@@ -310,15 +310,43 @@ def change_proxy():
         return False
 
 def get_random_user_agent():
-    """生成随机的用户代理，避免被识别为爬虫"""
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:90.0) Gecko/20100101 Firefox/90.0',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+    """生成随机的用户代理，增强随机性避免被识别"""
+    # 常见操作系统
+    os_list = [
+        'Windows NT 10.0; Win64; x64',
+        'Windows NT 6.1; Win64; x64',
+        'Macintosh; Intel Mac OS X 10_15_7',
+        'Macintosh; Intel Mac OS X 10_14_6',
+        'X11; Linux x86_64',
+        'X11; Ubuntu; Linux x86_64',
+        'Windows NT 11.0; Win64; x64',
     ]
-    return random.choice(user_agents)
+    
+    # 常见浏览器及其版本
+    browsers = [
+        f'Chrome/{random.randint(90, 134)}.0.{random.randint(1000, 9999)}.{random.randint(10, 999)}',
+        f'Firefox/{random.randint(80, 120)}.0',
+        f'Safari/{random.randint(600, 615)}.{random.randint(1, 36)}',
+        f'Edge/{random.randint(90, 120)}.0.{random.randint(100, 999)}.{random.randint(10, 99)}',
+        f'OPR/{random.randint(70, 95)}.0.{random.randint(1000, 9999)}.{random.randint(10, 999)}',
+    ]
+    
+    # 选择随机的操作系统和浏览器
+    selected_os = random.choice(os_list)
+    selected_browser = random.choice(browsers)
+    
+    # 构建随机的用户代理字符串
+    if 'Chrome' in selected_browser or 'Edge' in selected_browser or 'OPR' in selected_browser:
+        webkit_version = f'{random.randint(500, 537)}.{random.randint(30, 36)}'
+        user_agent = f'Mozilla/5.0 ({selected_os}) AppleWebKit/{webkit_version} (KHTML, like Gecko) {selected_browser}'
+    elif 'Firefox' in selected_browser:
+        gecko_version = f'{random.randint(20200101, 20231231)}'
+        user_agent = f'Mozilla/5.0 ({selected_os}; rv:{selected_browser.split("/")[1]}) Gecko/{gecko_version} Firefox/{selected_browser.split("/")[1]}'
+    else:  # Safari
+        webkit_version = f'{random.randint(600, 615)}.{random.randint(1, 36)}'
+        user_agent = f'Mozilla/5.0 ({selected_os}) AppleWebKit/{webkit_version} (KHTML, like Gecko) Version/{random.randint(13, 17)}.{random.randint(0, 7)}.{random.randint(1, 10)} Safari/{webkit_version}'
+    
+    return user_agent
 
 def analyze_result(result_text):
     """分析结果类型：正常、避雷或云黑"""
@@ -434,23 +462,71 @@ def query_qq_numbers(qq_list, max_retries=3):
                 'https': f'http://{AUTH_KEY}:{PASSWORD}@{current_remote_proxy["host"]}:{current_remote_proxy["port"]}'
             }
 
-            # 准备请求头，移除/修改部分头信息以避免被识别为爬虫
+            # 准备完全随机的请求头，避免任何可能的个人信息
+            def get_random_accept_language():
+                """生成随机的Accept-Language头"""
+                languages = [
+                    'zh-CN,zh;q=0.9,en;q=0.8', 
+                    'en-US,en;q=0.9',
+                    'en-GB,en;q=0.9',
+                    'fr-FR,fr;q=0.9,en;q=0.8',
+                    'de-DE,de;q=0.9,en;q=0.8',
+                    'ja-JP,ja;q=0.9,en;q=0.8',
+                    'ru-RU,ru;q=0.9,en;q=0.8',
+                    'es-ES,es;q=0.9,en;q=0.8',
+                    'it-IT,it;q=0.9,en;q=0.8',
+                    'ko-KR,ko;q=0.9,en;q=0.8',
+                    'ar-SA,ar;q=0.9,en;q=0.8'
+                ]
+                return random.choice(languages)
+            
+            # 随机生成referer，有时不发送
+            possible_referers = [
+                TARGET_SITE["url"],
+                TARGET_SITE["referer"],
+                "https://www.google.com/",
+                "https://www.bing.com/",
+                "https://www.baidu.com/",
+                None  # 有时不发送referer
+            ]
+            referer = random.choice(possible_referers)
+            
             headers = {
                 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'accept-language': get_random_accept_language(),
                 'content-type': 'application/x-www-form-urlencoded',
-                'origin': TARGET_SITE["url"],
-                'referer': TARGET_SITE["referer"],
                 'user-agent': get_random_user_agent(),
-                'upgrade-insecure-requests': '1'
+                'cache-control': random.choice(['max-age=0', 'no-cache', 'no-store']),
+                'upgrade-insecure-requests': '1',
+                'sec-fetch-dest': random.choice(['document', 'empty']),
+                'sec-fetch-mode': random.choice(['navigate', 'cors']),
+                'sec-fetch-site': random.choice(['same-origin', 'same-site', 'cross-site']),
+                'dnt': random.choice(['0', '1']),  # Do Not Track
             }
-
-            # 添加随机Cookie，但保持原始的部分值
+            
+            # 随机添加origin
+            if random.random() > 0.3:  # 70%的概率添加origin
+                headers['origin'] = TARGET_SITE["url"]
+                
+            # 随机添加referer
+            if referer:
+                headers['referer'] = referer
+            
+            # 生成完全随机的cookies以防止跟踪
+            def generate_random_string(length):
+                """生成指定长度的随机字符串"""
+                chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+                return ''.join(random.choice(chars) for _ in range(length))
+            
+            # 生成随机的时间戳，略微偏离当前时间，以防时间关联
+            random_time = int(time.time()) - random.randint(1000, 100000)
+            
             cookies = {
-                'Hm_lvt_625b5936d453568074dfd15dc336732f': str(int(time.time())),
-                'Hm_lpvt_625b5936d453568074dfd15dc336732f': str(int(time.time())),
-                'HMACCOUNT': '92470D6224485F65',
-                'sl-session': '5VwGSY8g2mf8XUW91J1DLQ=='
+                # 使用随机生成的值替代所有固定值
+                'Hm_lvt_random': str(random_time),
+                'Hm_lpvt_random': str(random_time + random.randint(10, 1000)),
+                'HMACCOUNT_' + generate_random_string(8): generate_random_string(16),
+                'session': generate_random_string(24)
             }
 
             # 准备数据
@@ -556,13 +632,45 @@ def query_qq_numbers(qq_list, max_retries=3):
     # 如果所有重试都失败
     return []
 
-def save_results_to_file(results, filename="qq_results.txt"):
-    """保存结果到文件"""
+def save_results_to_file(results, filename="qq_results.txt", max_file_size_mb=10):
+    """保存结果到文件，只保存避雷和云黑类型的结果，文件大小超过限制时创建新文件"""
     try:
-        with open(filename, "a", encoding="utf-8") as f:
-            for result in results:
+        # 检查文件是否存在及大小
+        new_file = not os.path.exists(filename)
+        file_counter = 1
+        base_filename, ext = os.path.splitext(filename)
+        current_filename = filename
+        
+        # 如果文件存在且大小超过限制，创建新文件
+        while os.path.exists(current_filename) and os.path.getsize(current_filename) > max_file_size_mb * 1024 * 1024:
+            file_counter += 1
+            current_filename = f"{base_filename}_{file_counter}{ext}"
+            logger.info(f"文件大小超过{max_file_size_mb}MB，创建新文件: {current_filename}")
+        
+        filtered_results = []
+        for result in results:
+            # 判断是否是字符串，如果是则进行简单判断
+            if isinstance(result, str):
+                if "避雷" in result or "云黑" in result:
+                    filtered_results.append(result)
+            # 如果是从查询结果中直接获取的字典对象
+            elif isinstance(result, dict) and "result_type" in result:
+                if result["result_type"] in [RESULT_TYPE["AVOID"], RESULT_TYPE["CLOUD_BLACK"]]:
+                    # 格式化为字符串保存
+                    formatted_result = f"QQ: {result['qq']}, 结果: {result['result']}, 类型: {result['result_type']}, IP: {result['ip_used']}, 时间: {result['time']}"
+                    filtered_results.append(formatted_result)
+        
+        # 如果没有符合条件的结果，直接返回
+        if not filtered_results:
+            logger.info("没有避雷或云黑类型的结果需要保存")
+            return
+        
+        # 写入文件
+        with open(current_filename, "a", encoding="utf-8") as f:
+            for result in filtered_results:
                 f.write(f"{result}\n")
-        logger.info(f"结果已保存到 {filename}")
+        
+        logger.info(f"已将 {len(filtered_results)} 条避雷/云黑结果保存到 {current_filename}")
     except Exception as e:
         logger.error(f"保存结果到文件时出错: {e}")
 
@@ -589,6 +697,9 @@ def batch_query(qq_numbers, batch_size=None):
         logger.info(f"正在处理第 {i+1}/{len(batches)} 批 (共 {len(batch)} 个QQ)...")
         results = query_qq_numbers(batch)
         all_results.extend(results)
+        
+        # 立即保存本批次特殊结果
+        save_results_to_file(results, max_file_size_mb=20)
         
         # 如果不是最后一批，添加随机延迟
         if i < len(batches) - 1:
@@ -704,6 +815,10 @@ def sequential_query(batch_size=None):
         logger.info(f"正在处理第 {batch_count+1} 批 (共 {len(qq_batch)} 个QQ)...")
         results = query_qq_numbers(qq_batch)
         all_results.extend(results)
+        
+        # 立即保存本批次特殊结果
+        save_results_to_file(results, max_file_size_mb=20)
+        
         batch_count += 1
         
         # 定期保存进度
@@ -782,8 +897,8 @@ def main():
             logger.info("开始系统性连续查询所有QQ号码范围...")
             results = sequential_query(batch_size)
         
-        # 保存结果到文本文件
-        save_results_to_file(results)
+        # 保存结果到文本文件，设置文件大小限制为20MB
+        save_results_to_file(results, max_file_size_mb=20)
         
         # 最终汇总保存结果到Excel
         save_results_to_excel()

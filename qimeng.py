@@ -232,7 +232,7 @@ def verify_proxy(proxy_host, proxy_port):
             'http': f'http://{AUTH_KEY}:{PASSWORD}@{proxy_host}:{proxy_port}',
             'https': f'http://{AUTH_KEY}:{PASSWORD}@{proxy_host}:{proxy_port}'
         }
-        response = requests.get(TARGET_SITE["url"], proxies=proxies, timeout=10, verify=False)
+        response = requests.get(IP_CHECK_URL, proxies=proxies, timeout=10, verify=False)
         return response.status_code == 200
     except Exception as e:
         logger.error(f"验证代理时出错: {proxy_host}:{proxy_port}, {str(e)}")

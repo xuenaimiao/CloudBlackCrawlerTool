@@ -402,20 +402,31 @@ def generate_qq_list(size):
     return [generate_random_qq() for _ in range(size)]
 
 def initialize_excel_file():
-    """初始化Excel文件，如果不存在则创建"""
+    """初始化Excel文件，如果不存在则创建，用于保存避雷和云黑类型的结果"""
     if not os.path.exists(EXCEL_FILENAME):
         # 创建带有表头的空DataFrame
         columns = ["qq", "result", "result_type", "ip_used", "time"]
         df = pd.DataFrame(columns=columns)
         # 保存到Excel
         df.to_excel(EXCEL_FILENAME, index=False)
-        logger.info(f"创建了新的Excel文件: {EXCEL_FILENAME}")
+        logger.info(f"创建了新的Excel文件: {EXCEL_FILENAME} (用于保存避雷和云黑记录)")
 
 def append_results_to_excel(new_results):
-    """将新结果追加到Excel文件中"""
+    """将新结果追加到Excel文件中，只保存避雷和云黑类型的结果"""
     try:
         # 确保Excel文件存在
         initialize_excel_file()
+
+        # 过滤只保留避雷和云黑类型的结果
+        filtered_results = []
+        for result in new_results:
+            if "result_type" in result and result["result_type"] in [RESULT_TYPE["AVOID"], RESULT_TYPE["CLOUD_BLACK"]]:
+                filtered_results.append(result)
+        
+        # 如果没有符合条件的结果，直接返回
+        if not filtered_results:
+            logger.info("没有避雷或云黑类型的结果需要保存到Excel")
+            return
 
         # 读取现有的Excel文件
         if os.path.getsize(EXCEL_FILENAME) > 0:  # 确保文件不是空的
@@ -425,7 +436,7 @@ def append_results_to_excel(new_results):
             existing_df = pd.DataFrame(columns=["qq", "result", "result_type", "ip_used", "time"])
 
         # 创建包含新结果的DataFrame
-        new_df = pd.DataFrame(new_results)
+        new_df = pd.DataFrame(filtered_results)
 
         # 合并两个DataFrame
         combined_df = pd.concat([existing_df, new_df], ignore_index=True)
@@ -433,7 +444,7 @@ def append_results_to_excel(new_results):
         # 保存回Excel文件
         combined_df.to_excel(EXCEL_FILENAME, index=False)
 
-        logger.info(f"已将 {len(new_results)} 条新结果追加到 {EXCEL_FILENAME}")
+        logger.info(f"已将 {len(filtered_results)} 条避雷/云黑结果追加到 {EXCEL_FILENAME}")
     except Exception as e:
         logger.error(f"将结果追加到Excel文件时出错: {e}")
 
@@ -597,13 +608,16 @@ def query_qq_numbers(qq_list, max_retries=3):
                         "time": current_time
                     }
                     
-                    # 添加到全局结果和批次结果
-                    query_results.append(result_item)
+                    # 只保存避雷和云黑类型的结果到全局结果集
+                    if result_type in [RESULT_TYPE["AVOID"], RESULT_TYPE["CLOUD_BLACK"]]:
+                        query_results.append(result_item)
+                    
+                    # 所有结果都添加到批次结果中，在append_results_to_excel函数中会进行过滤
                     batch_results.append(result_item)
                 
                 # 立即将本批次结果追加到Excel文件
                 append_results_to_excel(batch_results)
-                
+
                 return results
             else:
                 logger.error(f"请求失败，状态码: {response.status_code}")
@@ -616,7 +630,7 @@ def query_qq_numbers(qq_list, max_retries=3):
                 else:
                     logger.error(f"已达到最大重试次数 {max_retries}，无法获取结果")
                     return []
-        
+
         except Exception as e:
             logger.error(f"查询QQ号码时出错: {e}")
             # 切换代理
@@ -628,7 +642,7 @@ def query_qq_numbers(qq_list, max_retries=3):
             else:
                 logger.error(f"已达到最大重试次数 {max_retries}，无法获取结果")
                 return []
-    
+
     # 如果所有重试都失败
     return []
 
@@ -640,13 +654,13 @@ def save_results_to_file(results, filename="qq_results.txt", max_file_size_mb=10
         file_counter = 1
         base_filename, ext = os.path.splitext(filename)
         current_filename = filename
-        
+
         # 如果文件存在且大小超过限制，创建新文件
         while os.path.exists(current_filename) and os.path.getsize(current_filename) > max_file_size_mb * 1024 * 1024:
             file_counter += 1
             current_filename = f"{base_filename}_{file_counter}{ext}"
             logger.info(f"文件大小超过{max_file_size_mb}MB，创建新文件: {current_filename}")
-        
+
         filtered_results = []
         for result in results:
             # 判断是否是字符串，如果是则进行简单判断
@@ -659,27 +673,43 @@ def save_results_to_file(results, filename="qq_results.txt", max_file_size_mb=10
                     # 格式化为字符串保存
                     formatted_result = f"QQ: {result['qq']}, 结果: {result['result']}, 类型: {result['result_type']}, IP: {result['ip_used']}, 时间: {result['time']}"
                     filtered_results.append(formatted_result)
-        
+
         # 如果没有符合条件的结果，直接返回
         if not filtered_results:
             logger.info("没有避雷或云黑类型的结果需要保存")
             return
-        
+
         # 写入文件
         with open(current_filename, "a", encoding="utf-8") as f:
             for result in filtered_results:
                 f.write(f"{result}\n")
-        
+
         logger.info(f"已将 {len(filtered_results)} 条避雷/云黑结果保存到 {current_filename}")
     except Exception as e:
         logger.error(f"保存结果到文件时出错: {e}")
 
 def save_results_to_excel(filename=EXCEL_FILENAME):
-    """将所有结果保存到Excel文件（仅用于最终汇总）"""
+    """将结果保存到Excel文件，只保存避雷和云黑类型的结果（仅用于最终汇总）"""
     try:
-        df = pd.DataFrame(query_results)
+        # 过滤只保留避雷和云黑类型的结果
+        filtered_results = []
+        for result in query_results:
+            if "result_type" in result and result["result_type"] in [RESULT_TYPE["AVOID"], RESULT_TYPE["CLOUD_BLACK"]]:
+                filtered_results.append(result)
+        
+        # 如果没有符合条件的结果
+        if not filtered_results:
+            logger.info("没有避雷或云黑类型的结果需要保存到Excel")
+            # 创建空文件确保存在
+            if not os.path.exists(filename):
+                df = pd.DataFrame(columns=["qq", "result", "result_type", "ip_used", "time"])
+                df.to_excel(filename, index=False)
+                logger.info(f"创建了空的Excel文件: {filename}")
+            return
+            
+        df = pd.DataFrame(filtered_results)
         df.to_excel(filename, index=False)
-        logger.info(f"所有结果已保存到Excel文件: {filename}")
+        logger.info(f"已将 {len(filtered_results)} 条避雷/云黑结果保存到Excel文件: {filename}")
     except Exception as e:
         logger.error(f"保存结果到Excel文件时出错: {e}")
 
@@ -689,36 +719,36 @@ def batch_query(qq_numbers, batch_size=None):
         # 使用随机批量大小 (300-500)
         batch_size = random.randint(MIN_BATCH_SIZE, MAX_BATCH_SIZE)
         logger.info(f"设置批量查询大小为: {batch_size}")
-        
+
     all_results = []
     batches = [qq_numbers[i:i+batch_size] for i in range(0, len(qq_numbers), batch_size)]
-    
+
     for i, batch in enumerate(batches):
         logger.info(f"正在处理第 {i+1}/{len(batches)} 批 (共 {len(batch)} 个QQ)...")
         results = query_qq_numbers(batch)
         all_results.extend(results)
-        
+
         # 立即保存本批次特殊结果
         save_results_to_file(results, max_file_size_mb=20)
-        
+
         # 如果不是最后一批，添加随机延迟
         if i < len(batches) - 1:
             delay = random.uniform(MIN_DELAY, MAX_DELAY)
             logger.info(f"请求完成，等待 {delay:.1f} 秒...")
             time.sleep(delay)
-    
+
     return all_results
 
 def generate_qq_range(start_qq, end_qq, count):
     """生成指定范围内的随机QQ号码"""
     if start_qq > end_qq:
         start_qq, end_qq = end_qq, start_qq
-    
+
     # 如果范围内的数量少于请求的数量，返回整个范围
     range_size = end_qq - start_qq + 1
     if range_size <= count:
         return [str(qq) for qq in range(start_qq, end_qq + 1)]
-    
+
     # 否则随机选择count个不重复的数字
     return [str(qq) for qq in random.sample(range(start_qq, end_qq + 1), count)]
 
@@ -738,32 +768,32 @@ def load_checkpoint():
         try:
             with open(CHECKPOINT_FILE, 'rb') as f:
                 query_progress = pickle.load(f)
-            
+
             current_range_index = query_progress["current_range_index"]
             current_position = query_progress["current_position"]
             current_range = query_progress["ranges"][current_range_index]
-            
+
             logger.info(f"已恢复查询进度: 当前查询第 {current_range_index+1}/{len(query_progress['ranges'])} 个范围")
             logger.info(f"QQ范围: {current_range[0]}-{current_range[1]}, 当前位置: {current_position}")
             return True
         except Exception as e:
             logger.error(f"加载查询进度失败: {e}")
-    
+
     logger.info("未找到进度文件或无法加载，将从头开始查询")
     return False
 
 def get_next_qq_batch(batch_size):
     """获取下一批要查询的QQ号码"""
     global query_progress
-    
+
     if query_progress["current_range_index"] >= len(query_progress["ranges"]):
         logger.info("所有范围都已查询完毕")
         return []
-    
+
     current_range = query_progress["ranges"][query_progress["current_range_index"]]
     start_position = max(current_range[0], query_progress["current_position"])
     end_position = current_range[1]
-    
+
     # 如果当前范围已经查询完毕，移动到下一个范围
     if start_position > end_position or current_range[2]:  # 已处理标志为True
         query_progress["current_range_index"] += 1
@@ -773,21 +803,21 @@ def get_next_qq_batch(batch_size):
         else:
             logger.info("所有范围都已查询完毕")
             return []
-    
+
     # 确定本批次的结束位置
     batch_end = min(start_position + batch_size - 1, end_position)
-    
+
     # 生成QQ号码列表
     qq_list = [str(qq) for qq in range(start_position, batch_end + 1)]
-    
+
     # 更新进度
     query_progress["current_position"] = batch_end + 1
-    
+
     # 如果当前范围已查询完毕，标记为已处理
     if batch_end >= end_position:
         query_progress["ranges"][query_progress["current_range_index"]][2] = True
         logger.info(f"范围 {current_range[0]}-{current_range[1]} 已查询完毕")
-    
+
     logger.info(f"获取QQ批次: {start_position}-{batch_end} (共 {len(qq_list)} 个)")
     return qq_list
 
@@ -796,40 +826,40 @@ def sequential_query(batch_size=None):
     if batch_size is None:
         # 使用随机批量大小 (300-500)
         batch_size = random.randint(MIN_BATCH_SIZE, MAX_BATCH_SIZE)
-    
+
     all_results = []
     batch_count = 0
-    
+
     # 恢复查询进度
     load_checkpoint()
-    
+
     while True:
         # 获取下一批QQ号码
         qq_batch = get_next_qq_batch(batch_size)
-        
+
         # 如果没有更多QQ号码，结束查询
         if not qq_batch:
             logger.info("没有更多QQ号码需要查询")
             break
-        
+
         logger.info(f"正在处理第 {batch_count+1} 批 (共 {len(qq_batch)} 个QQ)...")
         results = query_qq_numbers(qq_batch)
         all_results.extend(results)
-        
+
         # 立即保存本批次特殊结果
         save_results_to_file(results, max_file_size_mb=20)
-        
+
         batch_count += 1
-        
+
         # 定期保存进度
         if batch_count % SAVE_CHECKPOINT_INTERVAL == 0:
             save_checkpoint()
-        
+
         # 随机延迟
         delay = random.uniform(MIN_DELAY, MAX_DELAY)
         logger.info(f"请求完成，等待 {delay:.1f} 秒...")
         time.sleep(delay)
-    
+
     # 保存最终进度
     save_checkpoint()
     return all_results
@@ -839,24 +869,24 @@ def main():
     try:
         # 初始化Excel文件
         initialize_excel_file()
-        
+
         # 启动本地代理服务器
         proxy_server = start_local_proxy_server()
         if not proxy_server:
             logger.error("无法启动本地代理服务器，爬取终止")
             return
-        
+
         # 获取初始代理 - 如果无法获取，程序会自动终止
         proxy_host, proxy_port = get_working_proxy()
-        
+
         if proxy_host and proxy_port:
             current_remote_proxy["host"] = proxy_host
             current_remote_proxy["port"] = proxy_port
-            
+
             # 获取当前IP信息
             ip_info = get_current_ip_info(proxy_host, proxy_port)
             current_remote_proxy["ip_info"] = ip_info
-            
+
             global last_proxy_change_time
             last_proxy_change_time = time.time()
             logger.info(f"初始代理设置为: {proxy_host}:{proxy_port}")
@@ -864,21 +894,21 @@ def main():
         else:
             logger.error("无法获取可用代理，程序终止")
             sys.exit(1)
-        
+
         # 确定批量大小
         batch_size = random.randint(MIN_BATCH_SIZE, MAX_BATCH_SIZE)
         logger.info(f"设置批量查询大小为: {batch_size}")
-        
+
         # 测试模式开关 (False = 全范围查询模式)
         test_mode = False
-        
+
         if test_mode:
             # 测试模式：使用一些特定样例和随机QQ
             qq_numbers = [
                 "",  # 避雷示例
                 "",  # 云黑示例
             ]
-            
+
             # 添加一些不同位数的随机QQ用于测试
             for length in range(MIN_QQ_LENGTH, MAX_QQ_LENGTH + 1):
                 min_val = 10**(length-1)
@@ -886,9 +916,9 @@ def main():
                 # 每个位数生成2个随机QQ
                 for _ in range(2):
                     qq_numbers.append(str(random.randint(min_val, max_val)))
-            
+
             logger.info(f"生成了 {len(qq_numbers)} 个测试用QQ号码")
-            
+
             # 批量查询
             logger.info("开始批量查询QQ号码...")
             results = batch_query(qq_numbers, batch_size)
@@ -896,15 +926,15 @@ def main():
             # 系统性连续查询模式
             logger.info("开始系统性连续查询所有QQ号码范围...")
             results = sequential_query(batch_size)
-        
+
         # 保存结果到文本文件，设置文件大小限制为20MB
         save_results_to_file(results, max_file_size_mb=20)
-        
+
         # 最终汇总保存结果到Excel
         save_results_to_excel()
-        
+
         logger.info("查询完成，结果已保存")
-    
+
     except KeyboardInterrupt:
         logger.info("用户中断程序")
         save_checkpoint()  # 保存当前进度
@@ -912,7 +942,7 @@ def main():
     except Exception as e:
         logger.error(f"程序执行时出错: {e}")
         save_checkpoint()  # 保存当前进度
-    
+
     finally:
         # 保存最终结果到Excel
         try:

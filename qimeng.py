@@ -350,34 +350,56 @@ def get_random_user_agent():
 
 def analyze_result(result_text):
     """分析结果类型：正常、避雷或云黑"""
+    # 注意：新格式的结果可能是"QQ号码未记录"这样的形式
     if "避雷" in result_text:
         return RESULT_TYPE["AVOID"]
     elif "云黑" in result_text:
         return RESULT_TYPE["CLOUD_BLACK"]
+    elif "未记录" in result_text or "正常" in result_text:
+        return RESULT_TYPE["NORMAL"]
     else:
         return RESULT_TYPE["NORMAL"]
 
 def extract_result(html_content):
     """从HTML中提取查询结果"""
     try:
-        # 使用正则表达式提取结果
-        pattern = r'<center><a class="BiaoTi">---------查询结果---------</a></center>\s+<center><br>(.*?)<center><br>\s+<center><a class="BiaoTi">------------------------------</a></center>'
+        # 新的格式: </script><br>√QQ号码结果<br>...多行...<br><br>
+        pattern = r'</script><br>(.*?)<br>\s*<br>\s*<h5>功能按钮</h5>'
         match = re.search(pattern, html_content, re.DOTALL)
-
+        
         if match:
             result_text = match.group(1).strip()
-            # 进一步处理结果
+            # 按<br>分割结果
             results = result_text.split('<br>')
             processed_results = []
-
+            
             for result in results:
                 if result.strip():
-                    # 移除HTML标签
+                    # 移除HTML标签和前面的"√"符号
                     clean_result = re.sub(r'<.*?>', '', result)
-                    processed_results.append(clean_result.strip())
-
+                    clean_result = re.sub(r'^√', '', clean_result).strip()
+                    processed_results.append(clean_result)
+            
             return processed_results
         else:
+            # 尝试使用旧格式，以兼容可能的变化
+            old_pattern = r'<center><a class="BiaoTi">---------查询结果---------</a></center>\s+<center><br>(.*?)<center><br>\s+<center><a class="BiaoTi">------------------------------</a></center>'
+            old_match = re.search(old_pattern, html_content, re.DOTALL)
+            
+            if old_match:
+                result_text = old_match.group(1).strip()
+                # 进一步处理结果
+                results = result_text.split('<br>')
+                processed_results = []
+                
+                for result in results:
+                    if result.strip():
+                        # 移除HTML标签
+                        clean_result = re.sub(r'<.*?>', '', result)
+                        processed_results.append(clean_result.strip())
+                
+                return processed_results
+            
             logger.warning("未在HTML中找到查询结果")
             return []
     except Exception as e:
@@ -543,7 +565,8 @@ def query_qq_numbers(qq_list, max_retries=3):
             # 准备数据
             qq_str = '\r\n'.join(qq_list)
             data = {
-                'qq': qq_str
+                'cxtype': 'PiLiang',
+                'user': qq_str
             }
 
             # 发送请求
@@ -900,13 +923,13 @@ def main():
         logger.info(f"设置批量查询大小为: {batch_size}")
 
         # 测试模式开关 (False = 全范围查询模式)
-        test_mode = False
+        test_mode = True
 
         if test_mode:
             # 测试模式：使用一些特定样例和随机QQ
             qq_numbers = [
-                "",  # 避雷示例
-                "",  # 云黑示例
+#                 "",  # 避雷示例
+#                 "",  # 云黑示例
             ]
 
             # 添加一些不同位数的随机QQ用于测试
@@ -927,11 +950,9 @@ def main():
             logger.info("开始系统性连续查询所有QQ号码范围...")
             results = sequential_query(batch_size)
 
-        # 保存结果到文本文件，设置文件大小限制为20MB
-        save_results_to_file(results, max_file_size_mb=20)
-
-        # 最终汇总保存结果到Excel
-        save_results_to_excel()
+        # 移除重复保存，因为batch_query和sequential_query内已经保存了结果
+        # save_results_to_file(results, max_file_size_mb=20)  # 已在查询函数内部保存
+        # save_results_to_excel()  # 已在查询函数内部保存
 
         logger.info("查询完成，结果已保存")
 
@@ -944,11 +965,11 @@ def main():
         save_checkpoint()  # 保存当前进度
 
     finally:
-        # 保存最终结果到Excel
-        try:
-            save_results_to_excel()
-        except Exception as e:
-            logger.error(f"保存最终结果时出错: {e}")
+        # 移除重复的Excel保存，避免多次保存相同结果
+        # try:
+        #     save_results_to_excel()
+        # except Exception as e:
+        #     logger.error(f"保存最终结果时出错: {e}")
             
         # 尝试停止代理服务器
         if 'proxy_server' in locals() and proxy_server:

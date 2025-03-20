@@ -11,8 +11,8 @@ MAX_PROXY_RETRIES = 3  # 最大代理重试次数
 # 目标网站配置
 TARGET_SITE = {
     "url": "https://fz.qimeng.fun",
-    "api_url": "https://fz.qimeng.fun/PiLiang.php",
-    "referer": "https://fz.qimeng.fun/PiLiang.php"
+    "api_url": "https://fz.qimeng.fun/",
+    "referer": "https://fz.qimeng.fun/"
 }
 
 # IP检查配置
